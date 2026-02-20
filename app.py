@@ -59,7 +59,7 @@ async def chat(request: Request):
                 }}
 
                 with no additional commentary, formatting, or text outside the JSON. The values should be the questions you generate only!
-                Your Answer should be in hebrew!
+                Your Answer should be in the language the question was asked!
                 """
     client = genai.Client(api_key=key)
     response = client.models.generate_content(
@@ -67,12 +67,12 @@ async def chat(request: Request):
         contents=prompt
     )
        # ניקוי markdown אם קיים
+    # raw = response.text.strip()
+    # raw = raw.replace("```json", "").replace("```", "").strip()
+    # data = json.loads(raw)
     raw = response.text.strip()
-    raw = raw.replace("```json", "").replace("```", "").strip()
-    data = json.loads(raw)
-    #  raw = response.text.strip()
-    # clean = extract_json(raw)
-    # data = json.loads(clean)
+    clean = extract_json(raw)
+    data = json.loads(clean)
     print("RAW:", response)
     print("TEXT:", response.text)
 
@@ -110,7 +110,8 @@ async def chat(request: Request):
                 Provide concrete suggestions for improvement.
                 End with a short encouraging sentence.
                 Do not include any text outside the JSON.
-                Your Answer should be in hebrew!
+                Your Answer should be in the language the Student Answer was answered (the language most of the answer was written in) - not necessarily the same as the question!
+                be more generous with the score if the answer is mostly correct but has minor issues, and more critical if the answer is mostly incorrect or missing key elements.
 
                 Question: {topic.get("question", "")}
                 Student Answer: {topic.get("answer", "")}"""
