@@ -1,14 +1,23 @@
 from fastapi import FastAPI, Request, HTTPException
 from google import genai
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 import os
 import re
 import json
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware # <--- IMPORT THIS
 
+
 app = FastAPI() 
 load_dotenv()
 key = os.getenv("GEMINI_KEY")
+limiter = Limiter(key_func = get_remote_address)
+global rate_qes = 0.075
+global rate_ans = 0.3
+global current_used = 0
+global limit_usd = 1
+app.state.limiter = limiter
 
 app.add_middleware(
     CORSMiddleware,
@@ -33,6 +42,7 @@ def extract_json(text):
 
 
 @app.post("/chat_topic")
+@limiter.limit("5/minute")
 async def chat(request: Request):
     data_req = await request.json()
     topic = data_req.get("topic", "")
@@ -62,11 +72,30 @@ async def chat(request: Request):
                 Your Answer should be in the language the question was asked!
                 """
     client = genai.Client(api_key=key)
-    response = client.models.generate_content(
+    # קריאה לפונקציה שסופרת טוקנים
+    count_response = client.models.count_tokens(
         model="gemini-2.5-flash",
         contents=prompt
     )
-       # ניקוי markdown אם קיים
+    # שליפת מספר הטוקנים מתוך אובייקט התשובה
+    total_tokens = count_response.total_tokens
+
+    # חישוב העלות: כמות הטוקנים חלקי מיליון, כפול התעריף
+    cost_in_dollars = (total_tokens / 1_000_000) * rate_qes
+    current_used += cost_in_dollars
+    
+    if current_used >= limit_usd:
+        raise HTTPException("budget exceeded!")
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            max_output_tokens=(int)((limit_usd-current_used/rate_ans)*1000000), 
+        )
+    )
+    current_used += (response.usage_metadata.candidates_token_count/1000000)*rate_ans
+    
+    # ניקוי markdown אם קיים
     # raw = response.text.strip()
     # raw = raw.replace("```json", "").replace("```", "").strip()
     # data = json.loads(raw)
@@ -84,6 +113,7 @@ async def chat(request: Request):
 
 
 @app.post("/chat_answers")
+@limiter.limit("5/minute")
 async def chat(request: Request):
     data_req = await request.json()
     topic = data_req.get("question", "answer")
@@ -117,10 +147,32 @@ async def chat(request: Request):
                 Student Answer: {topic.get("answer", "")}"""
 
     client = genai.Client(api_key=key)
-    response = client.models.generate_content(
+
+        # קריאה לפונקציה שסופרת טוקנים
+    count_response = client.models.count_tokens(
         model="gemini-2.5-flash",
         contents=prompt
     )
+    # שליפת מספר הטוקנים מתוך אובייקט התשובה
+    total_tokens = count_response.total_tokens
+
+    # חישוב העלות: כמות הטוקנים חלקי מיליון, כפול התעריף
+    cost_in_dollars = (total_tokens / 1_000_000) * rate_qes
+    current_used += cost_in_dollars
+    
+    if current_used >= limit_usd:
+        raise HTTPException("budget exceeded!")
+    
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            max_output_tokens=(int)((limit_usd-current_used/rate_ans)*1000000), 
+        )
+    )
+
+     current_used += ((response.usage_metadata.candidates_token_count)/1000000)*rate_ans
+    
     # ניקוי markdown אם קיים
     raw = response.text.strip()
     clean = extract_json(raw)
