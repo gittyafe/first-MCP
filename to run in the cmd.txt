@@ -1,3 +1,5 @@
 streamlit run frontend.py
 uvicorn app:app --reload
 venv\Scripts\activate
+
+שנעשה שאם הנושא בעברית - שיענה בעברית, ואם הנושא באנגלית שיענה באנגלית?
